@@ -599,6 +599,18 @@ describe('github source', () => {
     expect(h.store.threads.get('github:12')!.meta).not.toHaveProperty('pollError')
     h.store.close()
   })
+  it('takes in a mention whose notification GitHub delivered after the cursor had already passed the comment', async () => {
+    const h = host()
+    h.store.set('github-since', '2026-09-09T07:04:32.000Z')
+    const comment: GithubComment = { id: 5, body: '@agent-bot can you work on it?', user: { login: 'alice', type: 'User' },
+      html_url: 'https://github.com/acme/widgets/issues/4#issuecomment-5', created_at: '2026-09-09T07:04:24Z', updated_at: '2026-09-09T07:04:24Z' }
+    github(h, { notifications: [{ ...notification(4), updated_at: '2026-09-09T07:04:47Z' }],
+      'issues/4': issue(4, { created_at: '2026-09-09T07:02:54Z' }), 'issues/4/comments': [comment] })
+    await pollRound(h)
+    const addressed = h.receive.mock.calls.map(([trigger]) => trigger).filter(trigger => trigger.addressed)
+    expect(addressed).toEqual([expect.objectContaining({ addressed: 'mention', meta: expect.objectContaining({ number: 4, commentId: 5 }) })])
+    h.store.close()
+  })
   it('drops an Issue GitHub reports as deleted after recording it, and reads one it answers 404 for again', async () => {
     const h = host()
     h.store.set('github-since', '2026-09-08T00:00:00.000Z')
