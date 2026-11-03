@@ -589,7 +589,7 @@ describe('github source', () => {
     expect(h.receive.mock.calls.map(([trigger]) => trigger.meta.number)).toEqual([13])
     // The cursor moved together with the Issue it does not cover yet.
     expect(Date.parse(h.store.get<string>('github-since')!)).toBeGreaterThan(Date.parse('2026-09-08T00:00:00.000Z'))
-    expect(h.store.get('github-retry')).toEqual({ 12: { since: '2026-09-08T00:00:00.000Z', pr: false, attempts: 1, failedAt: expect.any(String) } })
+    expect(h.store.get('github-retry')).toEqual({ 12: { since: '2026-09-07T23:50:00.000Z', pr: false, attempts: 1, failedAt: expect.any(String) } })
     expect(h.store.threads.get('github:12')!.meta.pollError).toContain('Bad Gateway')
     Object.assign(routes, { notifications: [], 'issues/12': issue(12, { created_at: '2026-08-01T00:00:00Z' }),
       'issues/12/comments': [mention(2, 12, '2026-09-08T02:00:00Z')] })
@@ -597,6 +597,18 @@ describe('github source', () => {
     expect(h.receive.mock.calls.map(([trigger]) => trigger.meta.number)).toEqual([13, 12])
     expect(h.store.get('github-retry')).toEqual({})
     expect(h.store.threads.get('github:12')!.meta).not.toHaveProperty('pollError')
+    h.store.close()
+  })
+  it('takes in a mention whose notification GitHub delivered after the cursor had already passed the comment', async () => {
+    const h = host()
+    h.store.set('github-since', '2026-09-09T07:04:32.000Z')
+    const comment: GithubComment = { id: 5, body: '@agent-bot can you work on it?', user: { login: 'alice', type: 'User' },
+      html_url: 'https://github.com/acme/widgets/issues/4#issuecomment-5', created_at: '2026-09-09T07:04:24Z', updated_at: '2026-09-09T07:04:24Z' }
+    github(h, { notifications: [{ ...notification(4), updated_at: '2026-09-09T07:04:47Z' }],
+      'issues/4': issue(4, { created_at: '2026-09-09T07:02:54Z' }), 'issues/4/comments': [comment] })
+    await pollRound(h)
+    const addressed = h.receive.mock.calls.map(([trigger]) => trigger).filter(trigger => trigger.addressed)
+    expect(addressed).toEqual([expect.objectContaining({ addressed: 'mention', meta: expect.objectContaining({ number: 4, commentId: 5 }) })])
     h.store.close()
   })
   it('drops an Issue GitHub reports as deleted after recording it, and reads one it answers 404 for again', async () => {
@@ -858,8 +870,8 @@ describe('github source', () => {
     await pollRound(h)
     const expected = commentTrigger(comment, { number: 12, isPr: false, url }, 'conversation', 'agent-bot')
     expect(h.receive.mock.calls.map(([trigger]) => trigger)).toEqual([expected])
-    // An Issue has only its conversation; the comments are read since the notification cursor.
-    const since = encodeURIComponent('2026-09-08T00:00:00.000Z')
+    // An Issue has only its conversation; the comments are read from ten minutes before the notification cursor.
+    const since = encodeURIComponent('2026-09-07T23:50:00.000Z')
     expect(reads.filter(path => path.includes('/comments'))).toEqual([`issues/12/comments?per_page=100&since=${since}`])
     h.store.close()
   })
